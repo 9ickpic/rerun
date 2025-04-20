@@ -36,29 +36,6 @@ async function installPythonDependencies(backendDir, requirements) {
 }
 
 // Commands
-async function add() {
-	console.log(chalk.blue.bold('🔍 Запуск поиска пакетов...'));
-	const { packageName } = await inquirer.prompt([
-		{
-			type: 'autocomplete',
-			name: 'packageName',
-			message: 'Какой пакет установить?',
-			source: async (_, input) => searchPackages(input),
-		},
-	]);
-
-	try {
-		const packageWithVersion = packageName === 'eslint-plugin-tailwindcss' ? 'eslint-plugin-tailwindcss@3.17.0' : packageName;
-		await installPackages([packageWithVersion]);
-		console.log(chalk.green(`✅ Пакет ${packageName} успешно установлен`));
-		await setupPackage(packageName);
-		console.log(chalk.green(`⚙️ Пакет ${packageName} успешно настроен`));
-	} catch (error) {
-		console.error(chalk.red(`❌ Ошибка при обработке пакета ${packageName}: ${error.message}`));
-		process.exit(1);
-	}
-}
-
 async function init(cwd = process.cwd()) {
 	console.log(chalk.blue.bold('🚀 Запуск инициализации проекта...'));
 
@@ -135,19 +112,89 @@ async function init(cwd = process.cwd()) {
 	selectedPackages.forEach(pkg => console.log(chalk.green(`  ✓ ${pkg}`)));
 
 	try {
+		// Use cwd directly as the frontend directory
+		const frontendDir = cwd;
+
+		// Ensure frontendDir exists
+		if (!(await fs.pathExists(frontendDir))) {
+			console.log(chalk.yellow('⚠️ Папка frontend не существует. Создаём...'));
+			await fs.ensureDir(frontendDir);
+			console.log(chalk.green(`📁 Создана директория ${frontendDir}`));
+		}
+
 		const packagesWithVersions = selectedPackages.map(pkg => {
 			if (pkg === 'tailwindcss') return 'tailwindcss@3.4.0';
 			if (pkg === 'eslint-plugin-tailwindcss') return 'eslint-plugin-tailwindcss@3.17.0';
 			return pkg;
 		});
-		await installPackages(packagesWithVersions, cwd);
-		console.log(chalk.green('✅ Все пакеты успешно установлены'));
+		await installPackages(packagesWithVersions, frontendDir);
+		console.log(chalk.green('✅ Все пакеты успешно установлены в папке frontend'));
+
+		// Create configuration files for Tailwind and PostCSS
+		if (selectedPackages.includes('tailwindcss')) {
+			const tailwindConfig = `
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./src/**/*.{js,jsx,ts,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+`;
+			await fs.writeFile(path.join(frontendDir, 'tailwind.config.js'), tailwindConfig);
+			console.log(chalk.green('📝 Создан tailwind.config.js в папке frontend'));
+
+			const postcssConfig = `
+module.exports = {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+}
+`;
+			await fs.writeFile(path.join(frontendDir, 'postcss.config.js'), postcssConfig);
+			console.log(chalk.green('📝 Создан postcss.config.js в папке frontend'));
+
+			const indexScss = `
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+`;
+			await fs.ensureDir(path.join(frontendDir, 'src'));
+			await fs.writeFile(path.join(frontendDir, 'src/index.scss'), indexScss);
+			console.log(chalk.green('📝 Создан src/index.scss в папке frontend'));
+		}
+
+		// Create Prettier configuration files
+		if (selectedPackages.includes('prettier')) {
+			const prettierConfig = {
+				trailingComma: 'es5',
+				tabWidth: 2,
+				semi: true,
+				singleQuote: true,
+			};
+			await fs.writeJson(path.join(frontendDir, '.prettierrc.json'), prettierConfig, { spaces: 2 });
+			console.log(chalk.green('📝 Создан .prettierrc.json в папке frontend'));
+
+			const prettierIgnore = `
+node_modules
+dist
+build
+coverage
+`;
+			await fs.writeFile(path.join(frontendDir, '.prettierignore'), prettierIgnore);
+			console.log(chalk.green('📝 Создан .prettierignore в папке frontend'));
+		}
+
 		for (const pkg of selectedPackages) {
-			await setupPackage(pkg, cwd);
+			await setupPackage(pkg, frontendDir);
 			console.log(chalk.green(`⚙️ Пакет ${pkg} успешно настроен`));
 		}
 		console.log(chalk.blue.bold('🎉 Инициализация проекта завершена успешно'));
-		console.log(chalk.cyan('ℹ️ Проверьте package.json на наличие конфликтов версий и при необходимости добавьте "resolutions" или "overrides".'));
+		console.log(chalk.cyan('ℹ️ Проверьте package.json в папке frontend на наличие конфликтов версий и при необходимости добавьте "resolutions" или "overrides".'));
 	} catch (error) {
 		console.error(chalk.red(`❌ Ошибка при инициализации проекта: ${error.message}`));
 		process.exit(1);
@@ -157,11 +204,36 @@ async function init(cwd = process.cwd()) {
 async function list() {
 	console.log(chalk.blue.bold('📦 Сканирование установленных пакетов...'));
 	try {
-		const packageJson = await fs.readJson('package.json');
-		console.log(chalk.cyan('📋 Установленные пакеты:'));
-		Object.keys(packageJson.dependencies || {}).forEach(pkg => {
-			console.log(chalk.green(`  ✓ ${pkg}`));
-		});
+		const frontendDir = path.join(process.cwd(), 'frontend');
+		const backendDir = path.join(process.cwd(), 'backend');
+
+		// Сканирование frontend
+		if (await fs.pathExists(path.join(frontendDir, 'package.json'))) {
+			const frontendPackageJson = await fs.readJson(path.join(frontendDir, 'package.json'));
+			console.log(chalk.cyan('📋 Установленные пакеты во frontend:'));
+			Object.keys(frontendPackageJson.dependencies || {}).forEach(pkg => {
+				console.log(chalk.green(`  ✓ ${pkg} (frontend)`));
+			});
+			Object.keys(frontendPackageJson.devDependencies || {}).forEach(pkg => {
+				console.log(chalk.green(`  ✓ ${pkg} (frontend, dev)`));
+			});
+		} else {
+			console.log(chalk.yellow('⚠️ Папка frontend не содержит package.json'));
+		}
+
+		// Сканирование backend
+		if (await fs.pathExists(path.join(backendDir, 'package.json'))) {
+			const backendPackageJson = await fs.readJson(path.join(backendDir, 'package.json'));
+			console.log(chalk.cyan('📋 Установленные пакеты во backend:'));
+			Object.keys(backendPackageJson.dependencies || {}).forEach(pkg => {
+				console.log(chalk.green(`  ✓ ${pkg} (backend)`));
+			});
+			Object.keys(backendPackageJson.devDependencies || {}).forEach(pkg => {
+				console.log(chalk.green(`  ✓ ${pkg} (backend, dev)`));
+			});
+		} else {
+			console.log(chalk.yellow('⚠️ Папка backend не содержит package.json'));
+		}
 	} catch (error) {
 		console.error(chalk.red(`❌ Ошибка при чтении package.json: ${error.message}`));
 		process.exit(1);
@@ -241,10 +313,11 @@ async function generate() {
 
 		console.log(chalk.cyan(`📍 Текущая рабочая директория: ${process.cwd()}`));
 
-		await fs.ensureDir('src');
+		const frontendDir = path.join(process.cwd(), 'frontend');
+		await fs.ensureDir(path.join(frontendDir, 'src'));
 		console.log(chalk.green('📁 Директория src создана или уже существует'));
 
-		const componentDir = path.join('src', 'components', componentName);
+		const componentDir = path.join(frontendDir, 'src', 'components', componentName);
 		await fs.ensureDir(componentDir);
 		console.log(chalk.green(`📁 Директория ${componentDir} создана или уже существует`));
 
@@ -360,8 +433,8 @@ async function create() {
 		console.log(chalk.cyan('⚙️ Выполняется npx create-react-app...'));
 		await execa('npx', ['create-react-app', '.'], { stdio: 'inherit' });
 
-		await clean();
-		await init();
+		await clean(process.cwd());
+		await init(process.cwd()); // Use current directory
 
 		console.log(chalk.blue.bold('🎉 Новый React-проект успешно создан и настроен'));
 	} catch (error) {
@@ -481,7 +554,7 @@ async function createFrontend(frontendDir) {
 	}
 
 	await clean(frontendDir);
-	await init(frontendDir);
+	await init(frontendDir); // Pass frontendDir explicitly
 
 	console.log(chalk.cyan('📦 Установка фронтенд-зависимостей...'));
 	try {
@@ -799,21 +872,19 @@ async function main() {
 	console.clear();
 	console.log(chalk.blue.bold('⚡️ Добро пожаловать в reRun CLI!'));
 
-	program.version('1.0.0').description('reRun CLI for managing React projects and backends');
+	program.version('1.0.0').description('reRun CLI менеджер для настройки окружения разработки Web приложений');
 
-	program.command('add').description('Add a package to the project').action(add);
+	program.command('init').description('Инициализирует проект с выбранными пакетами').action(init);
 
-	program.command('init').description('Initialize a project with selected packages').action(init);
+	program.command('list').description('Показать установленные пакеты').action(list);
 
-	program.command('list').description('List installed packages').action(list);
+	program.command('clean').description('Очистить Create React App проект').action(clean);
 
-	program.command('clean').description('Clean Create React App template').action(clean);
+	program.command('generate').description('Генерирует новый компонент React').action(generate);
 
-	program.command('generate').description('Generate a new React component').action(generate);
+	program.command('create').description('Создать ветку').argument('[компонент]', 'добавить компонент (Backend или Frontend)', null).action(rerunCreate);
 
-	program.command('create').description('Create a new React project').argument('[component]', 'Component to add (Backend or Frontend)', null).action(rerunCreate);
-
-	program.command('create-project').description('Create a new project (monorepo, backend, or frontend)').action(createProject);
+	program.command('create-project').description('Создать новый проект (monorepo, backend, or frontend)').action(createProject);
 
 	program.parse(process.argv);
 
