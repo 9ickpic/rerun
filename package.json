@@ -1,0 +1,29 @@
+{
+	"name": "rerun",
+	"version": "1.0.0",
+	"description": "CLI-инструмент для быстрой настройки React-проектов",
+	"bin": {
+		"rerun": "./cli.js"
+	},
+	"scripts": {
+		"start": "node cli.js"
+	},
+	"keywords": [
+		"react",
+		"cli",
+		"component-generator"
+	],
+	"dependencies": {
+		"inquirer": "^8.2.4",
+		"fuse.js": "^6.6.2",
+		"fs-extra": "^10.1.0",
+		"execa": "^5.1.1",
+		"chalk": "^4.1.2"
+	},
+	"author": "Yaroslav Selyutin moontesearch@gmail.com",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/9ickpic/rerun#issues"
+	},
+	"homepage": "https://github.com/9ickpic/rerun#readme"
+}
